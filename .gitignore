@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+
+# logs
+*.log
+logs/
+
+# env
+.env
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# deploy artifacts
+*.zip

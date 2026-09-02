@@ -1,0 +1,15 @@
+{
+  "name": "disaster-nepal",
+  "version": "1.0.0",
+  "description": "Live disaster monitoring system for Nepal - earthquakes, floods, and satellite-based river monitoring",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "fetch-data": "node scripts/fetch-data.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  }
+}

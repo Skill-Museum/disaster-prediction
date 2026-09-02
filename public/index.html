@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nepal Flood &amp; Earthquake Early Warning</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d47a1'/%3E%3Cpath d='M6 17l7-7 4 3 9-8v15H6z' fill='%2349c6ff'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --bg:#ffffff; --panel:#ffffff; --panel-2:#f5f5f5; --border:#dcdcdc;
+    --text:#111111; --muted:#6b6b6b; --line:#e0e0e0;
+    --danger:#111111; --warn:#444444; --ok:#8a8a8a; --dark:#000000;
+    --accent:#222222;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0f0f0f; --panel:#161616; --panel-2:#1e1e1e; --border:#2e2e2e;
+      --text:#f0f0f0; --muted:#9a9a9a; --line:#2a2a2a;
+      --danger:#ffffff; --warn:#d0d0d0; --ok:#7a7a7a; --dark:#ffffff;
+      --accent:#eeeeee;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.4; }
+  .muted { color:var(--muted); }
+  .small { font-size:12px; }
+
+  /* ---------- header ---------- */
+  header { display:flex; align-items:center; gap:16px; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:900; }
+  header .brand { display:flex; align-items:center; gap:12px; }
+  header .logo { width:40px; height:40px; border-radius:50%; background:var(--dark); color:var(--bg); display:flex; align-items:center; justify-content:center; font-size:18px; }
+  header h1 { font-size:17px; margin:0; letter-spacing:-.01em; }
+  header .tagline { font-size:12px; color:var(--muted); margin:0; }
+  .lang-switch { margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .lang-btn { border:1px solid var(--border); background:var(--panel-2); color:var(--muted); padding:7px 14px; border-radius:20px; cursor:pointer; font-size:13px; font-weight:600; transition:background .15s; }
+  .lang-btn.active { background:var(--dark); color:var(--bg); border-color:var(--dark); }
+
+  .live-pill { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); border:1px solid var(--border); padding:7px 14px; border-radius:20px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); }
+  .dot.live { background:#22c55e; }
+
+  /* ---------- toasts ---------- */
+  #toasts { position:fixed; top:14px; right:14px; z-index:1200; display:flex; flex-direction:column; gap:10px; max-width:400px; }
+  .toast { background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--muted); box-shadow:0 8px 24px rgba(0,0,0,.12); border-radius:10px; padding:12px 16px; font-size:13px; animation:slide .25s ease; }
+  .toast strong { display:block; margin-bottom:4px; }
+  .toast .close { float:right; cursor:pointer; color:var(--muted); font-size:16px; line-height:1; }
+  .toast.danger  { border-left-color:#f44336; }
+  .toast.warning { border-left-color:#ff9800; }
+  .toast.agent   { border-left-color:#3f51b5; }
+  @keyframes slide { from { transform:translateX(30px); opacity:0; } to { transform:none; opacity:1; } }
+
+  /* pulsing marker ring for danger/warning on map */
+  @keyframes pulse-red { 0%{box-shadow:0 0 0 0 rgba(244,67,54,.6)} 70%{box-shadow:0 0 0 12px rgba(244,67,54,0)} 100%{box-shadow:0 0 0 0 rgba(244,67,54,0)} }
+  @keyframes pulse-orange { 0%{box-shadow:0 0 0 0 rgba(255,152,0,.5)} 70%{box-shadow:0 0 0 10px rgba(255,152,0,0)} 100%{box-shadow:0 0 0 0 rgba(255,152,0,0)} }
+  .leaflet-marker-icon.pulse-danger { animation: pulse-red 1.8s infinite; }
+  .leaflet-marker-icon.pulse-warn  { animation: pulse-orange 2.2s infinite; }
+
+  /* ---------- layout ---------- */
+  main { padding:20px 24px 40px; display:flex; flex-direction:column; gap:20px; max-width:1400px; margin:0 auto; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  @media (max-width:960px) { .grid2,.grid3 { grid-template-columns:1fr; } }
+
+  /* ---------- stat cards ---------- */
+  .stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
+  .stat { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .stat .k { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .stat .v { font-size:26px; font-weight:700; margin-top:6px; letter-spacing:-.01em; }
+  .stat .s { font-size:11px; color:var(--muted); margin-top:2px; }
+
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:18px; }
+  .panel h2 { font-size:14px; margin:0 0 2px; }
+  .panel .desc { font-size:12px; color:var(--muted); margin-bottom:14px; }
+
+  /* ---------- map ---------- */
+  #map { height:520px; border-radius:10px; z-index:1; border:1px solid var(--border); }
+  .map-row { display:flex; align-items:center; gap:14px; margin-bottom:10px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .legend { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin-top:8px; font-size:11px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+  .legend .line { width:16px; height:0; border-top:2px solid #333; border-radius:0; }
+
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .tab { background:var(--panel-2); border:1px solid var(--border); color:var(--muted); font-size:13px; padding:7px 12px; border-radius:8px; cursor:pointer; }
+  .tab.active { background:var(--dark); color:var(--bg); border-color:var(--dark); }
+
+  .badge { display:inline-block; font-size:10px; padding:3px 8px; border-radius:20px; font-weight:700; background:var(--panel-2); color:var(--muted); border:1px solid var(--border); }
+  .badge.danger,.badge.ALERT,.badge.EXTREME,.badge.HIGH { background:#f44336; color:#fff; border-color:#f44336; }
+  .badge.warning,.badge.WARNING { background:#ff9800; color:#fff; border-color:#ff9800; }
+  .badge.advisory,.badge.ADVISORY,.badge.MODERATE,.badge.rising { background:#ffc107; color:#fff; border-color:#ffc107; }
+  .badge.watch,.badge.WATCH,.badge.normal,.badge.LOW,.badge.MINIMAL { background:#4caf50; color:#fff; border-color:#4caf50; }
+
+  /* ---------- bars (always visible bar graphs, both themes) ---------- */
+  .bar-row { display:flex; align-items:center; gap:12px; padding:7px 0; font-size:13px; }
+  .bar-row .name { width:120px; flex-shrink:0; color:var(--muted); }
+  .bar-track { flex:1; height:14px; background:#e6e6e6; border:1px solid #c0c0c0; border-radius:6px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:4px; }
+  .bar-row .val { width:90px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0; }
+
+  .risk-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .risk-row:last-child { border-bottom:none; }
+  .risk-row .name { width:130px; }
+  .risk-row .name .sub { display:block; font-size:10px; color:var(--muted); }
+  .risk-row .bar-track { height:16px; }
+  .risk-row .score { width:42px; text-align:right; font-weight:700; }
+
+  .row { display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .row .meta { font-size:12px; color:var(--muted); margin-top:3px; }
+
+  .upstream .top { display:flex; justify-content:space-between; align-items:baseline; }
+  .upstream .lead { font-size:12px; color:var(--muted); }
+  .upstream .watch { font-size:12px; color:var(--muted); margin-top:3px; }
+
+  /* ---------- chart ---------- */
+  #riverChart { width:100%; height:230px; display:block; border:1px solid var(--border); border-radius:10px; background:var(--bg); }
+  .chart-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+  .chart-legend { display:flex; gap:14px; font-size:11px; color:var(--muted); margin-top:8px; }
+  .chart-legend i { display:inline-block; width:16px; height:9px; vertical-align:middle; margin-right:4px; border-radius:2px; }
+
+  footer { text-align:center; font-size:11px; color:var(--muted); padding:24px; border-top:1px solid var(--border); }
+
+  
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">⚠</div>
+    <div>
+      <h1 id="brandTitle">Nepal Flood &amp; Earthquake Early Warning</h1>
+      <p class="tagline" id="brandSub">Live satellite, river and earthquake monitoring</p>
+    </div>
+  </div>
+  <div class="lang-switch">
+    <button class="lang-btn active" data-lang="en" id="btnEn">English</button>
+    <button class="lang-btn" data-lang="np" id="btnNp">नेपाली</button>
+  </div>
+  <div class="live-pill"><span class="dot" id="dot"></span><span id="wsStatus">Connecting…</span></div>
+</header>
+
+<div id="toasts"></div>
+
+<main>
+
+  <div class="stat-row" id="statRow"></div>
+
+  <div class="panel">
+    <h2 id="mapTitle">Live map — Nepal &amp; India border</h2>
+    <div class="desc" id="mapDesc">Watch rivers, rain, earthquakes and satellite flood water live. The dark line is the India–Nepal border.</div>
+    <div class="map-row" id="mapRow"></div>
+    <div id="map"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2 id="riverTitle">7-day river forecast</h2>
+      <div class="desc" id="riverDesc">How much water is expected in each river over the next 7 days, compared to normal.</div>
+      <div class="tabs" id="riverTabs"></div>
+      <div class="chart-head">
+        <div id="riverNameLine"></div>
+        <div id="rainLine" class="small muted"></div>
+      </div>
+      <canvas id="riverChart"></canvas>
+      <div class="chart-legend" id="riverLegend"></div>
+    </div>
+
+    <div class="panel">
+      <h2 id="riskTitle">Risk level by river</h2>
+      <div class="desc" id="riskDesc">100 = highest risk. Uses forecast, rain and flow data.</div>
+      <div id="riskList"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel upstream">
+      <h2 id="upTitle">Water coming from Tibet (upstream)</h2>
+      <div class="desc" id="upDesc">Nepal's big rivers start in Tibet. If water there rises, it reaches Nepal hours later.</div>
+      <div id="upstreamList"></div>
+    </div>
+    <div class="panel">
+      <h2 id="rainTitle">Where it is raining now</h2>
+      <div class="desc" id="rainDesc">Live rain chance (probability) across regions, updated every few minutes.</div>
+      <div id="rainList"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+  <div class="panel">
+    <h2 id="gaugeTitle">River water levels now (BIPAD/DHM live)</h2>
+    <div class="desc" id="gaugeDesc">Live DHM water level (m) with margin-to-warning bar.</div>
+    <div id="gaugeList"></div>
+  </div>
+    <div class="panel">
+      <h2 id="quakeTitle">Recent earthquakes &amp; GLOF risk</h2>
+      <div class="desc" id="quakeDesc">A shallow quake near a glacial lake can burst it (GLOF) — a sudden flood.</div>
+      <div id="quakeList"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 id="bipadTitle">Official BIPAD / DHM live data</h2>
+    <div class="desc" id="bipadDesc">Live Department of Hydrology &amp; Meteorology (DHM) telemetry plus BIPAD incidents, road closures and disaster impact — official government data (auto-refresh 2 min).</div>
+    <div class="tabs" id="bipadTabs"></div>
+    <div id="bipadList"></div>
+  </div>
+
+  <div class="panel">
+    <h2 id="tlTitle">Timeline — observed &amp; predicted</h2>
+    <div class="desc" id="tlDesc">Observed rainfall, live river level and the 7-day forecast for one location. Pick a window, then a station/river.</div>
+    <div class="tl-controls">
+      <div class="tabs" id="tlWindow"></div>
+      <div class="tabs" id="tlSource"></div>
+    </div>
+    <canvas id="tlChart" style="width:100%;height:260px;display:block;border:1px solid var(--border);border-radius:10px;background:var(--bg)"></canvas>
+    <div class="chart-legend" id="tlLegend"></div>
+    <div id="tlStatus" class="small muted" style="margin-top:8px"></div>
+  </div>
+
+
+  <div class="panel">
+    <h2 id="alertTitle">Alert history</h2>
+    <div class="desc" id="alertDesc">Latest warnings. New alerts also appear as pop-ups at the top-right.</div>
+    <div id="alertList"><div id="alertEmpty" class="small muted">No alerts yet.</div></div>
+  </div>
+
+</main>
+
+<footer>Data: BIPAD/DHM (official river &amp; rain telemetry) · NASA (satellite flood) · USGS (earthquakes) · Open-Meteo/GloFAS (river &amp; rain) · auto-refresh every 2 min</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/borders.js"></script>
+<script>
+/* =============================== i18n (English / नेपाली) =============================== */
+const I18N = {
+  en: {
+    brandTitle:'Nepal Flood & Earthquake Early Warning', brandSub:'Live satellite, river and earthquake monitoring',
+    mapTitle:'Live map — Nepal, India & China borders', mapDesc:'Watch rivers, rain, earthquakes and satellite flood water live. Dark line = Nepal–India border, dashed line = Nepal–China (Tibet) border.',
+    riverTitle:'7-day river forecast', riverDesc:'How much water is expected in each river over the next 7 days, compared to normal.',
+    riskTitle:'Risk level by river', riskDesc:'100 = highest risk. Uses forecast, rain and flow data.',
+    upTitle:'Water coming from Tibet (upstream)', upDesc:'Nepal’s big rivers start in Tibet. If water there rises, it reaches Nepal hours later.',
+    rainTitle:'Where it is raining now', rainDesc:'Live rain chance (probability) across regions, updated every few minutes.',
+    gaugeTitle:'River water levels now', gaugeDesc:'Current flow compared to normal for each river.',
+    quakeTitle:'Recent earthquakes & GLOF risk', quakeDesc:'A shallow quake near a glacial lake can burst it (GLOF) — a sudden flood.',
+    alertTitle:'Alert history', alertDesc:'Latest warnings. New alerts also appear as pop-ups at the top-right.',
+    bipadTitle:'Official BIPAD / DHM live data', bipadDesc:'Live DHM telemetry plus BIPAD incidents, road closures and disaster impact — official government data (auto-refresh 2 min).',
+    tlTitle:'Timeline — observed & predicted', tlDesc:'Observed rainfall, live river level and the 7-day forecast for one location. Pick a window, then a station/river.',
+    tlWin10m:'10 min', tlWin1h:'1 hr', tlWin2h:'2 hr', tlWin6h:'6 hr', tlWin12h:'12 hr', tlWin24h:'24 hr', tlWin7d:'7 days',
+    tlAllRain:'All rain stations', tlAllRivers:'All rivers', tlMostRain:'top rain', tlWarnRatio:'% near/above warning', tlRainSum:'rain sum', tlLevel:'level',
+    tlObserved:'observed', tlPredicted:'predicted', tlNormal:'normal level', tlWindow:'window', tlStation:'station/river',
+    tlUpSpark:'Tibet flow (history + forecast)', tlBaselineNow:'now', tlBaselineAvg:'normal', tlPeakIn:'peak in', tlDaysLater:'d',
+    bipadRiverTab:'River levels', bipadRainTab:'Rainfall (DHM)', bipadAlertTab:'Official alerts', bipadIncidentTab:'Incidents', bipadRoadTab:'Road closures', bipadLossTab:'Impact',
+    wl:'water level', warnLevel:'warning', dangerLevel:'danger', steady:'trend', liveStations:'live stations',
+    rainingNow:'raining now', mmH:'mm/hr', lvl:'level',
+    incidents:'incidents', landslides:'landslides', fires:'fires', floods:'floods', roads:'road events',
+    roadsClosed:'closed', roadsPartial:'partial', reason:'reason', impact:'impact', affected:'affected',
+    deaths:'deaths', missing:'missing', injured:'injured', economicLoss:'economic loss', roadDest:'roads destroyed', bridgesDest:'bridges destroyed',
+    statRisk:'National risk', statUp:'Risk from Tibet', statRivers:'Rivers on alert', statQuakes:'Earthquakes', statSat:'Satellite', statRain:'Raining',
+    of:'of', monitored:'monitored', live:'Live', riskLevel:'risk', noData:'No data yet', noAlerts:'No alerts yet.',
+    legendRiver:'River', legendUpstream:'Tibet water', legendQuake:'Earthquake (GLOF risk)', legendRain:'Raining now', legendBorder:'India–Nepal border', legendChina:'Nepal–China (Tibet) border', legendFlood:'Satellite flood water', legendWarn:'Warning level',
+    normal:'normal', rising:'rising', danger:'DANGER', warning:'WARNING', adversarial:'advisory', watch:'watch',
+    rainProb:'rain chance', mm6h:'mm next 6h', baseline:'vs normal', rainDays:'rain', days:'days',
+    rainNow:'now', mmPerHr:'mm/hr', liveRainTitle:'Live rain radar', rainNowHdr:'right now',
+    leadsTo:'reaches Nepal in', hours:'hours', feeds:'feeds', watchR:'watch', now:'now',
+    today:'today', observe:'observed', forecast:'7-day forecast', normalLine:'normal level',
+    toastNew:'NEW', publish:'Publishing as you watch.',
+  },
+  np: {
+    brandTitle:'नेपाल बाढी र भूकम्प चेतावनी प्रणाली', brandSub:'प्रत्यक्ष उपग्रह, नदी र भूकम्प निगरानी',
+    mapTitle:'प्रत्यक्ष नक्सा — नेपाल, भारत र चीन सीमा', mapDesc:'नदी, वर्षा, भूकम्प र उपग्रहको बाढी पानी प्रत्यक्ष हेर्नुहोस्। गाढा रेखा भारत–नेपाल सीमा, बिन्दुदार रेखा नेपाल–चीन (तिब्बत) सीमा हो।',
+    riverTitle:'७ दिनको नदी पूर्वानुमान', riverDesc:'आगामी ७ दिनमा प्रत्येक नदीमा कति पानी आउने अनुमान छ, सामान्यको तुलनामा।',
+    riskTitle:'नदी अनुसार जोखिम स्तर', riskDesc:'१०० = सबैभन्दा उच्च जोखिम। पूर्वानुमान, वर्षा र प्रवाह डेटा प्रयोग गरिन्छ।',
+    upTitle:'तिब्बतबाट आउँदै गरेको पानी (माथिल्लो)', upDesc:'नेपालका ठूला नदीहरू तिब्बतबाट सुरु हुन्छन्। त्यहाँ पानी बढे नेपालमा घण्टौंपछि आइपुग्छ।',
+    rainTitle:'अहिले कहाँ वर्षा भइरहेको छ', rainDesc:'क्षेत्र अनुसार प्रत्यक्ष वर्षाको सम्भावना, हरेक केही मिनेटमा अद्यावधिक।',
+    gaugeTitle:'अहिले नदीको पानीको स्तर', gaugeDesc:'प्रत्येक नदीको सामान्य तुलनामा हालको प्रवाह।',
+    quakeTitle:'हालैका भूकम्प र GLOF जोखिम', quakeDesc:'हिमताल नजिकको उथलो भूकम्पले ताल फुटाउन सक्छ (GLOF) — अचानक बाढी।',
+    alertTitle:'चेतावनी इतिहास', alertDesc:'पछिल्ला चेतावनीहरू। नयाँ चेतावनी माथि-दायाँ पप-अपमा पनि देखिन्छ।',
+    bipadTitle:'आधिकारिक BIPAD / DHM लाइभ डेटा', bipadDesc:'जल तथा मौसम विज्ञान विभाग (DHM) को प्रत्यक्ष टेलिमेट्री र BIPAD घटना, सडक अवरुद्ध र विपद् असर — आधिकारिक सरकारी डेटा (२ मिनेटमा अद्यावधिक)।',
+    tlTitle:'टाइमलाइन — अवलोकित र पूर्वानुमान', tlDesc:'एक स्थानको अवलोकित वर्षा, प्रत्यक्ष नदी स्तर र ७-दिनको पूर्वानुमान। पहिले अवधि छान्नुहोस्, अनि स्टेसन/नदी।',
+    tlWin10m:'१० मिनेट', tlWin1h:'१ घण्टा', tlWin2h:'२ घण्टा', tlWin6h:'६ घण्टा', tlWin12h:'१२ घण्टा', tlWin24h:'२४ घण्टा', tlWin7d:'७ दिन',
+    tlAllRain:'सबै वर्षा स्टेसन', tlAllRivers:'सबै नदी', tlMostRain:'अधिक वर्षा', tlWarnRatio:'% चेतावनी नजिक/माथि', tlRainSum:'वर्षा योग', tlLevel:'स्तर',
+    tlObserved:'अवलोकित', tlPredicted:'पूर्वानुमान', tlNormal:'सामान्य स्तर', tlWindow:'अवधि', tlStation:'स्टेसन/नदी',
+    tlUpSpark:'तिब्बत प्रवाह (इतिहास + पूर्वानुमान)', tlBaselineNow:'अहिले', tlBaselineAvg:'सामान्य', tlPeakIn:'शिखर आउने', tlDaysLater:'दिनपछि',
+    bipadRiverTab:'नदी स्तर', bipadRainTab:'वर्षा (DHM)', bipadAlertTab:'आधिकारिक चेतावनी', bipadIncidentTab:'घटनाहरू', bipadRoadTab:'सडक अवरुद्ध', bipadLossTab:'असर',
+    wl:'पानीको स्तर', warnLevel:'चेतावनी', dangerLevel:'खतरा', steady:'प्रवृत्ति', liveStations:'लाइभ स्टेसन',
+    rainingNow:'वर्षा भइरहेको', mmH:'मिमी/घण्टा', lvl:'स्तर',
+    incidents:'घटनाहरू', landslides:'पहिरो', fires:'आगो', floods:'बाढी', roads:'सडक घटना',
+    roadsClosed:'बन्द', roadsPartial:'आंशिक', reason:'कारण', impact:'असर', affected:'प्रभावित',
+    deaths:'मृत्यु', missing:'बेपत्ता', injured:'घाइते', economicLoss:'आर्थिक क्षति', roadDest:'सडक नष्ट', bridgesDest:'पुल नष्ट',
+    statRisk:'राष्ट्रिय जोखिम', statUp:'तिब्बतबाट जोखिम', statRivers:'चेतावनीमा नदी', statQuakes:'भूकम्प', statSat:'उपग्रह', statRain:'वर्षा',
+    of:'को', monitored:'निगरानी', live:'प्रत्यक्ष', riskLevel:'जोखिम', noData:'अहिले डेटा छैन', noAlerts:'कुनै चेतावनी छैन।',
+    legendRiver:'नदी', legendUpstream:'तिब्बतको पानी', legendQuake:'भूकम्प (GLOF जोखिम)', legendRain:'अहिले वर्षा', legendBorder:'भारत–नेपाल सीमा', legendChina:'नेपाल–चीन (तिब्बत) सीमा', legendFlood:'उपग्रह बाढी पानी', legendWarn:'चेतावनी स्तर',
+    normal:'सामान्य', rising:'बढ्दै', danger:'खतरा', warning:'चेतावनी', adversarial:'सावधानी', watch:'निगरानी',
+    rainProb:'वर्षा सम्भावना', mm6h:'मिमी अर्को ६ घण्टा', baseline:'सामान्यभन्दा', rainDays:'वर्षा', days:'दिन',
+    rainNow:'अहिले', mmPerHr:'मिमी/घण्टा', liveRainTitle:'लाइभ वर्षा रडार', rainNowHdr:'अहिले',
+    leadsTo:'नेपाल आइपुग्छ', hours:'घण्टामा', feeds:'मिसिन्छ', watchR:'हेर्नुहोस्', now:'अहिले',
+    today:'आज', observe:'अवलोकित', forecast:'७-दिन पूर्वानुमान', normalLine:'सामान्य स्तर',
+    toastNew:'नयाँ', publish:'जारी छ।',
+  }
+};
+let LANG = 'en';
+function t(k){ const lang = I18N[LANG] || I18N.en; return lang[k] ?? I18N.en[k] ?? k; }
+function applyLang(){
+  for (const [id,key] of Object.entries({
+    brandTitle:'brandTitle', brandSub:'brandSub', mapTitle:'mapTitle', mapDesc:'mapDesc',
+    riverTitle:'riverTitle', riverDesc:'riverDesc', riskTitle:'riskTitle', riskDesc:'riskDesc',
+    upTitle:'upTitle', upDesc:'upDesc', rainTitle:'rainTitle', rainDesc:'rainDesc',
+    gaugeTitle:'gaugeTitle', gaugeDesc:'gaugeDesc', quakeTitle:'quakeTitle', quakeDesc:'quakeDesc',
+    alertTitle:'alertTitle', alertDesc:'alertDesc',
+    bipadTitle:'bipadTitle', bipadDesc:'bipadDesc',
+  })){ const el=document.getElementById(id); if(el) el.textContent=t(key); }
+  document.documentElement.lang = LANG==='np'?'ne':'en';
+  renderAll(lastState);
+}
+document.getElementById('btnEn').onclick=()=>{LANG='en';document.getElementById('btnEn').classList.add('active');document.getElementById('btnNp').classList.remove('active');applyLang();};
+document.getElementById('btnNp').onclick=()=>{LANG='np';document.getElementById('btnNp').classList.add('active');document.getElementById('btnEn').classList.remove('active');applyLang();};
+
+/* =============================== theme helpers =============================== */
+function severityColor(sev){
+  const s=(sev||'').toUpperCase();
+  if(s==='DANGER'||s==='ALERT'||s==='EXTREME') return '#111111';
+  if(s==='WARNING'||s==='WARNING2'||s==='HIGH') return '#4a4a4a';
+  return '#8a8a8a';
+}
+function bandClass(band){
+  const b=(band||'').toUpperCase();
+  if(['ALERT','WARNING'].includes(b)) return 'danger';
+  if(b==='ADVISORY') return 'warning';
+  return 'watch';
+}
+
+/* =============================== toasts =============================== */
+function toast(msg, sev, at){
+  const box=document.getElementById('toasts');
+  const el=document.createElement('div');
+  el.className='toast '+ (sev==='danger'?'danger':sev==='agent'?'agent':'warning');
+  el.innerHTML=`<span class="close">✕</span><strong>${sev==='agent'?'🛰️ '+t('toastNew')+' (agent)':t('toastNew')}</strong>${msg}`;
+  box.appendChild(el);
+  el.querySelector('.close').onclick=()=>el.remove();
+  setTimeout(()=>el.remove(), 9000);
+}
+const seenAlerts=new Set();
+
+/* =============================== map =============================== */
+let map, riverMarkers={}, quakeMarkers=[], gaugeMarkers=[], rainMarkers=[], bipadGaugeMarkers=[], bipadRainMarkers=[], bipadAlertMarkers=[], incidentMarkers=[], roadMarkers=[];
+let nasaLayer=null, gfmLayer=null, nepalPolys=[], indiaLines=[];
+let __nasaRefreshTimer=null;
+
+/* Auto-refresh NASA flood overlay every 2 min (tile cache-bust) */
+function startNasaAutoRefresh(){
+  if(__nasaRefreshTimer) return;
+  __nasaRefreshTimer=setInterval(()=>{
+    if(!window.__nasaCfg?.template) return;
+    if(nasaLayer) map.removeLayer(nasaLayer);
+    nasaLayer=L.tileLayer(window.__nasaCfg.template+'&t='+Date.now(),{opacity:0.55,zIndex:500,attribution:'NASA LANCE',updateWhenZooming:false}).addTo(map);
+  },120000);
+}
+
+function initMap(){
+  // Real satellite map (EPSG:3857) — Esri World Imagery + labels, then Nepal/India/China borders on top.
+  map=L.map('map',{zoomControl:true,minZoom:4,maxZoom:18});
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:18, attribution:'Imagery © Esri, Maxar, Earthstar Geographics'
+  }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:18, attribution:'Esri'
+  }).addTo(map);
+  // India border + Nepal outline + China border
+  if(window.BORDERS){
+    if(window.BORDERS.india) indiaLines.push(L.polygon(window.BORDERS.india,{color:'#ffd700',weight:2,opacity:0.95}).addTo(map));
+    if(window.BORDERS.china){ for(const ring of window.BORDERS.china){ indiaLines.push(L.polygon(ring,{color:'#ff7f27',weight:1.6,opacity:0.85,dashArray:'6,5'}).addTo(map)); } }
+    if(window.BORDERS.nepal) nepalPolys.push(L.polygon(window.BORDERS.nepal,{color:'#ffff00',weight:3,fillOpacity:0.05,fillColor:'#ffff00'}).addTo(map));
+  }
+  map.fitBounds([[26.35,80.05],[30.45,88.25]]);
+}
+
+/* =============================== renderers =============================== */
+let activeRiverId=null, lastState=null;
+
+function renderStatRow(state){
+  const rivs=state.forecast?.rivers||[];
+  const alertCount=(state.risk?.scores||[]).filter(s=>s.score>=60).length;
+  const raining=(state.rainNowcast?.items||[]).filter(r=>r.prob!=null&&r.prob>=50).length;
+  const stat=[];
+  stat.push({k:t('statRisk'),v:state.risk?.national?.band||'—',s:`${state.risk?.national?.score??0}/100 ${t('riskLevel')}`});
+  stat.push({k:t('statRivers'),v:alertCount,s:`${t('of')} ${rivs.length} ${t('monitored')}`});
+  stat.push({k:t('statRain'),v:raining,s:`${t('of')} ${(state.rainNowcast?.items||[]).length} ${t('monitored')}`});
+  stat.push({k:t('statQuakes'),v:state.earthquake?.quakes?.length??0,s:'M≥3.5 · USGS'});
+  stat.push({k:t('statSat'),v:state.satellite?.status==='connected'?t('live'):'—',s:state.satellite?.latestTime||''});
+  document.getElementById('statRow').innerHTML=stat.map(x=>`
+    <div class="stat"><div class="k">${x.k}</div><div class="v">${x.v}</div><div class="s">${x.s}</div></div>`).join('');
+}
+
+function renderMap(state){
+  Object.values(riverMarkers).forEach(m=>map.removeLayer(m)); riverMarkers={};
+  quakeMarkers.forEach(m=>map.removeLayer(m)); quakeMarkers=[];
+  gaugeMarkers.forEach(m=>map.removeLayer(m)); gaugeMarkers=[];
+  rainMarkers.forEach(m=>map.removeLayer(m)); rainMarkers=[];
+  bipadGaugeMarkers.forEach(m=>map.removeLayer(m)); bipadGaugeMarkers=[];
+  bipadRainMarkers.forEach(m=>map.removeLayer(m)); bipadRainMarkers=[];
+  bipadAlertMarkers.forEach(m=>map.removeLayer(m)); bipadAlertMarkers=[];
+  incidentMarkers.forEach(m=>map.removeLayer(m)); incidentMarkers=[];
+  roadMarkers.forEach(m=>map.removeLayer(m)); roadMarkers=[];
+
+  const RIVER_COORDS={karnali:[28.63,81.28],bheri:[28.60,81.62],rapti:[27.68,84.43],sunkoshi:[27.25,85.97],mechi:[26.65,87.95],sapta_koshi:[26.88,87.15],narayani:[27.70,84.42],trishuli:[28.03,85.13]};
+  const UPSTREAM_COORDS={bhote_koshi_poiqu:[28.27,85.31],arun_pumqu:[27.80,87.10]};
+  // Semantic warning colours: danger=red, warning=orange, rising=yellow, watch=green
+  const levels={normal:'#4caf50',watch:'#8bc34a',rising:'#ffc107',warning:'#ff9800',danger:'#f44336','near-danger':'#d32f2f',advisory:'#ffeb3b'};
+
+  // rain nowcast overlay (solid, no gradient)
+  for(const rn of state.rainNowcast?.items||[]){
+    if(rn.prob==null||rn.prob<30) continue;
+    const p=rn.prob; const fill = p>=80?'#111111':(p>=60?'#3a3a3a':'#6f6f6f');
+    const rad=20000+ (rn.precipMm6h||0)*12000;
+    rainMarkers.push(L.circle([rn.lat,rn.lon],{radius:rad,color:fill,fillColor:fill,fillOpacity:0.35,weight:1})
+      .bindTooltip(`<b>${rn.name}</b><br/>${t('rainProb')}: ${rn.prob}% · ${(rn.precipMm6h||0).toFixed(1)}${t('mm6h')}`).addTo(map));
+  }
+
+  // LIVE rain radar overlay — BIPAD-inspired warm intensity scale: green→yellow→orange→red
+  for(const lr of state.liveRain?.items||[]){
+    const mm=lr.precipMmHr||0;
+    if(mm<=0) continue;
+    let radColor, opacity;
+    if(mm>=30){      radColor='#b71c1c'; opacity=0.75; } // dark red = extreme
+    else if(mm>=15){ radColor='#d32f2f'; opacity=0.65; } // red = very heavy
+    else if(mm>=8){  radColor='#ff9800'; opacity=0.6;  } // orange = heavy
+    else if(mm>=4){  radColor='#ffc107'; opacity=0.55; } // yellow = moderate
+    else if(mm>=1.5){radColor='#8bc34a'; opacity=0.5;  } // green = light
+    else{            radColor='#4caf50'; opacity=0.35; } // pale green = drizzle
+    const rad=24000+ Math.min(mm,50)*1600;
+    rainMarkers.push(L.circle([lr.lat,lr.lon],{radius:rad,color:radColor,fillColor:radColor,fillOpacity:opacity,weight:1})
+      .bindTooltip(`<b>${lr.name}</b><br/>${t('rainNow')}: ${mm.toFixed(1)} ${t('mmPerHr')}`).addTo(map));
+  }
+  for(const r of state.forecast?.rivers||[]){
+    const c=RIVER_COORDS[r.id]; if(!c) continue;
+    const color=levels[String(r.band).toLowerCase()]||'#8a8a8a';
+    riverMarkers[r.id]=L.circleMarker(c,{radius:8,color,fillColor:color,fillOpacity:0.9})
+      .bindTooltip(`${r.name}: ${t(String(r.band).toLowerCase())}`).addTo(map);
+  }
+  for(const u of state.upstream?.items||[]){
+    const c=UPSTREAM_COORDS[u.id]; if(!c) continue;
+    riverMarkers['up_'+u.id]=L.circleMarker(c,{radius:7,color:'#3f51b5',fillColor:'#3f51b5',fillOpacity:0.6,dashArray:'2'})
+      .bindTooltip(`${u.name} (${t('legendUpstream')})`).addTo(map);
+  }
+  for(const g of state.flood?.stations||[]){
+    const c=UPSTREAM_COORDS[g.id]||RIVER_COORDS[g.id.split(' ')[0]]; if(!c) continue;
+    const color=levels[g.level]||'#8a8a8a';
+    gaugeMarkers.push(L.circleMarker(c,{radius:5,color,fillColor:color,fillOpacity:0.95})
+      .bindTooltip(`${g.name}: ${t(g.level||'normal')}`).addTo(map));
+  }
+  for(const q of state.earthquake?.quakes||[]){
+    const m=L.circleMarker([q.lat,q.lon],{radius:Math.max(5,q.mag*2.2),color:'#9c27b0',fillColor:'#9c27b0',fillOpacity:0.4})
+      .bindTooltip(`M${q.mag} — ${q.place}`).addTo(map);
+    quakeMarkers.push(m);
+  }
+
+  // Official live DHM river gauges — plotted at their REAL coordinates (like BIPAD).
+  // Coloured by margin-to-warning: danger=red, warning=orange, near-warning=yellow, safe=green.
+  for(const g of state.bipad?.river?.stations||[]){
+    if(!g.lat||!g.lon||!g.live) continue;
+    let col,rad,cls;
+    if(g.rank>=3){ col='#d32f2f'; rad=12; cls=''; } // danger = dark red, big
+    else if(g.rank===2){ col='#ff9800'; rad=11; cls='pulse-warn'; } // warning = orange, pulsing
+    else if(g.marginToWarning!=null&&g.marginToWarning<=0.3){ col='#ffc107'; rad=9; cls='pulse-warn'; } // near warning = yellow, pulsing
+    else if(g.marginToWarning!=null&&g.marginToWarning<=0.8){ col='#ffeb3b'; rad=7; cls=''; } // approaching = pale yellow
+    else{ col='#4caf50'; rad=6; cls=''; } // safe = green
+    const m=L.circleMarker([g.lat,g.lon],{radius:rad,color:col,fillColor:col,fillOpacity:0.9,weight:1.5,className:cls||undefined})
+      .bindTooltip(`<b>${g.name}</b> (DHM)<br/>${t('wl')}: ${g.waterLevel!=null?g.waterLevel.toFixed(2):'—'} m`+
+        (g.warningLevel!=null?`<br/>${t('warnLevel')}: ${g.warningLevel} m`:'')+
+        (g.dangerLevel!=null?`<br/>${t('dangerLevel')}: ${g.dangerLevel} m`:'')+
+        (g.steady?`<br/>${t('steady')}: ${g.steady}`:'')+
+        `<br/>${new Date(g.measuredOn).toLocaleTimeString()}`).addTo(map);
+    bipadGaugeMarkers.push(m);
+  }
+
+  // Official live DHM rain stations that are actually raining now (mm/hr) — blue dots
+  for(const r of state.bipad?.rain?.stations||[]){
+    if(!r.lat||!r.lon||!r.live||!(r.hourlyMm>0)) continue;
+    const mm=r.hourlyMm||0;
+    const col=mm>=15?'#1565c0':(mm>=8?'#1e88e5':(mm>=4?'#42a5f5':'#90caf9'));
+    const m=L.circleMarker([r.lat,r.lon],{radius:Math.min(10,4+mm),color:col,fillColor:col,fillOpacity:0.55,weight:1})
+      .bindTooltip(`<b>${r.name}</b> (DHM rain)<br/>${t('rainNow')}: ${mm.toFixed(1)} ${t('mmH')}`).addTo(map);
+    bipadRainMarkers.push(m);
+  }
+
+  // Official BIPAD alerts — red/purple markers
+  for(const a of state.bipad?.alerts?.alerts||[]){
+    if(!a.lat||!a.lon) continue;
+    const m=L.circleMarker([a.lat,a.lon],{radius:11,color:'#d50000',fillColor:'#ff1744',fillOpacity:0.55,weight:2})
+      .bindPopup(`<b>${a.title}</b><br/>${a.description||''}`).addTo(map);
+    bipadAlertMarkers.push(m);
+  }
+
+  // Landslide / fire / flood incidents (recent) — brown landslide, orange fire, blue flood
+  const nowI=Date.now();
+  for(const inc of state.bipad?.incidents?.incidents||[]){
+    if(!inc.lat||!inc.lon) continue;
+    const ts=inc.incidentOn?Date.parse(inc.incidentOn):null;
+    if(!ts||nowI-ts>90*24*3600*1000) continue;
+    let col;
+    if(inc.isLandslide){ col='#795548'; }
+    else if(inc.isFire){ col='#e64a19'; }
+    else if(inc.isFlood){ col='#1976d2'; }
+    else { continue; }
+    const m=L.marker([inc.lat,inc.lon],{icon:L.divIcon({className:'inc-ico',html:`<div style="width:13px;height:13px;background:${col};border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,iconSize:[13,13],iconAnchor:[7,7]})})
+      .bindTooltip(`<b>${inc.title}</b><br/>${inc.hazard}${inc.district?' · D'+inc.district:''}<br/>${inc.incidentOn?inc.incidentOn.slice(0,10):''}`).addTo(map);
+    incidentMarkers.push(m);
+  }
+
+  // Active road closures — red ring for blocked, orange ring for partial
+  for(const r of state.bipad?.highways?.roads||[]){
+    if(!r.lat||!r.lon) continue;
+    const col=r.isClosed?'#ff1744':'#ff9800';
+    const m=L.circleMarker([r.lat,r.lon],{radius:9,color:col,weight:3,fillColor:col,fillOpacity:0.25,className:r.isClosed?'pulse-danger':'pulse-warn'})
+      .bindPopup(`<b>${r.title}</b><br/>${r.status}: ${r.closureReason||''}<br/>since ${r.dateRoadblockStart?r.dateRoadblockStart.slice(0,10):''}`).addTo(map);
+    roadMarkers.push(m);
+  }
+
+  // Landslide locations (highway events triggered by landslide/GLOF) — brown dots with coords
+  for(const ls of state.bipad?.highways?.landslides||[]){
+    if(!ls.lat||!ls.lon) continue;
+    const m=L.circleMarker([ls.lat,ls.lon],{radius:6,color:'#5d4037',weight:1.5,fillColor:'#795548',fillOpacity:0.7})
+      .bindTooltip(`<b>${ls.title}</b><br/>🏔️ ${ls.closureReason||'Landslide'}<br/>${ls.dateRoadblockStart?ls.dateRoadblockStart.slice(0,10):''}`).addTo(map);
+    incidentMarkers.push(m);
+  }
+  // legend
+  document.getElementById('legend').innerHTML=`
+    <span><i style="border-top:2.5px solid #ffd700;background:none;width:18px"></i>${t('legendBorder')}</span>
+    <span><i style="border-top:2px dashed #ff7f27;background:none;width:18px"></i>${t('legendChina')}</span>
+    <span><i style="background:#8a8a8a;border:1.5px solid #555"></i>${t('legendRiver')}</span>
+    <span><i style="background:#3f51b5"></i>${t('legendUpstream')}</span>
+    <span><i style="background:#9c27b0"></i>${t('legendQuake')}</span>
+    <span><i style="background:#8bc34a"></i>${t('legendRain')}</span>
+    <span><i style="background:#d32f2f"></i>DHM ${t('danger')}</span>
+    <span><i style="background:#ff9800"></i>DHM ${t('warning')}</span>
+    <span><i style="background:#ffc107"></i>near ${t('warning')}</span>
+    <span><i style="border:1.5px dashed #ff1744;background:none"></i>BIPAD alert</span>
+    <span><i style="background:#795548"></i>landslide</span>
+    <span><i style="border:2px solid #ff1744;background:none"></i>road blocked</span>
+    <span><i style="border-top:2px solid #e91e63;background:none;width:18px"></i>${t('legendFlood')}</span>
+    <span style="margin-left:4px">${t('legendWarn')}:</span>
+    <span><i style="background:#f44336"></i>${t('danger')}</span>
+    <span><i style="background:#ff9800"></i>${t('warning')}</span>
+    <span><i style="background:#ffc107"></i>${t('rising')}</span>
+    <span><i style="background:#4caf50"></i>${t('watch')}</span>`;
+}
+
+function renderRiverForecast(state){
+  const rivers=state.forecast?.rivers||[];
+  if(!activeRiverId&&rivers[0])activeRiverId=rivers[0].id;
+  document.getElementById('riverTabs').innerHTML=rivers.map(r=>
+    `<div class="tab ${r.id===activeRiverId?'active':''}" data-id="${r.id}">${r.name}</div>`).join('');
+  document.querySelectorAll('#riverTabs .tab').forEach(el=>el.onclick=()=>{activeRiverId=el.dataset.id;renderRiverForecast(state);});
+
+  const r=rivers.find(x=>x.id===activeRiverId); if(!r){document.getElementById('riverNameLine').innerHTML='';return;}
+  document.getElementById('riverNameLine').innerHTML=`<span class="badge ${bandClass(r.band)}">${r.band}</span> <strong style="margin-left:8px">${r.name}</strong> <span class="muted small">${r.district||''}</span>`;
+  document.getElementById('rainLine').textContent=`${t('rainDays')}: ${r.rain7dMm??'—'}mm`;
+  renderLineChart(r);
+}
+
+/* clear line chart: observed (solid) + 7-day forecast (dashed) + normal level */
+function renderLineChart(r){
+  const canvas=document.getElementById('riverChart'); if(!canvas)return;
+  const dpr=window.devicePixelRatio||1;
+  const cw=canvas.clientWidth||620, ch=230;
+  canvas.width=cw*dpr; canvas.height=ch*dpr;
+  const ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
+  const padL=46,padR=14,padT=20,padB=30;
+  const W=cw,H=ch;
+  const theme=getComputedStyle(document.body);
+  const txtRgb=theme.getPropertyValue('--text').trim(), mutRgb=theme.getPropertyValue('--muted').trim();
+  ctx.font='10px sans-serif';
+
+  const series=(r.series||[]).filter(p=>p.dischargeM3s!=null);
+  if(!series.length){ctx.fillStyle=mutRgb;ctx.fillText(t('noData'),W/2-30,H/2);return;}
+  const ti=(r.todayIdx!=null&&r.todayIdx>=0&&r.todayIdx<=series.length)?r.todayIdx:series.length;
+  const baseline=r.baselineM3s;
+  const vals=series.map(p=>p.dischargeM3s);
+  const max=Math.max(1, ...vals, baseline||0)*1.15;
+  const X=i=>padL+(i/(series.length-1||1))*(W-padL-padR);
+  const Y=v=>padT+(1-v/max)*(H-padT-padB);
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--bg').trim()||'#fff';
+  ctx.fillRect(0,0,W,H);
+
+  // grid + y labels
+  ctx.fillStyle=mutRgb; ctx.strokeStyle='#e3e3e3';
+  for(let g=0;g<=4;g++){const v=max*g/4;const y=Y(v);ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.fillText(Math.round(v),4,y+3);}
+
+  // baseline dashed
+  if(baseline!=null){const by=Y(baseline);ctx.strokeStyle='#111';ctx.setLineDash([6,4]);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(padL,by);ctx.lineTo(W-padR,by);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#111';ctx.fillText(t('normalLine')+' '+Math.round(baseline),W-padR-130,by-5);ctx.lineWidth=1;}
+
+  // fill under observed area
+  const line=(start,end,style,dash)=>{
+    if(end<=start)return;
+    ctx.strokeStyle=style;ctx.lineWidth=2.2;if(dash)ctx.setLineDash([5,4]);
+    ctx.beginPath();
+    for(let i=start;i<end;i++){const x=X(i),y=Y(vals[i]);i===start?ctx.moveTo(x,y):ctx.lineTo(x,y);}
+    ctx.stroke();if(dash)ctx.setLineDash([]);
+  };
+  line(0,Math.max(1,ti),txtRgb,false);            // observed solid
+  line(Math.max(0,ti-1),series.length,'#8a8a8a',true); // forecast dashed
+
+  // point dots on forecast
+  ctx.fillStyle='#8a8a8a';
+  for(let i=Math.max(1,ti);i<series.length;i++){ctx.beginPath();ctx.arc(X(i),Y(vals[i]),2.5,0,7);ctx.fill();}
+
+  // today divider
+  if(series.length&&ti>0){const x=X(ti);ctx.strokeStyle='#bbb';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,H-padB);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=mutRgb;ctx.fillText(t('today'),x+4,padT+10);}
+
+  // date labels
+  ctx.fillStyle=mutRgb;
+  const step=Math.max(1,Math.ceil(series.length/8));
+  for(let i=0;i<series.length;i+=step){ctx.fillText(String(series[i].date).slice(5),X(i)-12,H-10);}
+
+  document.getElementById('riverLegend').innerHTML=`
+    <span><i style="background:var(--text)"></i>${t('observe')}</span>
+    <span><i style="background:#8a8a8a"></i>${t('forecast')}</span>
+    <span><i style="border-top:2px dashed #111;background:none"></i>${t('normalLine')}</span>`;
+}
+
+function renderRisk(state){
+  const scores=state.risk?.scores||[];
+  document.getElementById('riskList').innerHTML=scores.map(s=>`
+    <div class="risk-row">
+      <div class="name">${s.name}<span class="sub">${s.district||''}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${s.score}%;background:${s.score>=60?'#f44336':s.score>=45?'#ff9800':s.score>=30?'#ffc107':'#4caf50'}"></div></div>
+      <div class="score">${s.score}</div>
+    </div>`).join('')||`<div class="small muted">${t('noData')}</div>`;
+}
+
+function renderUpstream(state){
+  const items=state.upstream?.items||[];
+  document.getElementById('upstreamList').innerHTML=items.map(i=>{
+    const spark = upstreamSpark(i);
+    const surgePct = (i.currentDischargeM3s!=null&&i.baselineM3s)?Math.round(i.currentDischargeM3s/i.baselineM3s*100):null;
+    return `<div class="upstream" style="border-bottom:1px solid var(--line);padding:11px 0">
+      <div class="top">
+        <div><span class="badge ${bandClass(i.band)}">${i.band}</span> <strong style="margin-left:8px">${i.name}</strong></div>
+        <div class="lead">${t('leadsTo')} ${i.leadTimeHours?.[0]??'?'}–${i.leadTimeHours?.[1]??'?'} ${t('hours')}</div>
+      </div>
+      <div class="meta small muted">${i.country||''} · ${t('feeds')} ${i.feeds||''} · ${i.currentDischargeM3s!=null?Math.round(i.currentDischargeM3s)+' m³/s':'—'}${surgePct?` · ${surgePct}% ${t('baseline')}`:''}${i.peakInDays!=null?` · ${t('tlPeakIn')} ${i.peakInDays+1}${t('tlDaysLater')}`:''}</div>
+      ${spark?`<div style="margin-top:6px">${spark}</div>`:''}
+      ${i.leadTimeNote?`<div class="lead small muted" style="margin-top:3px">${i.leadTimeNote}</div>`:''}
+      <div class="watch small muted">${t('watchR')}: ${(i.watchPoints||[]).join(', ')}</div>
+    </div>`;
+  }).join('')||`<div class="small muted">${t('noData')}</div>`;
+}
+
+// Inline SVG sparkline of a transboundary point's discharge history + 7-day forecast.
+function upstreamSpark(i){
+  const s=i.series; if(!s||!s.length) return '';
+  const w=560,h=56; const padB=10;
+  const vals=s.map(p=>p.dischargeM3s).filter(v=>v!=null);
+  if(vals.length<2) return '';
+  const max=Math.max(...vals, i.baselineM3s||0)*1.1, min=Math.min(...vals,i.baselineM3s||0,0)*0.9;
+  const ti=i.todayIdx!=null?Math.min(i.todayIdx,s.length):s.length;
+  const X=i=>i/(s.length-1||1)*w;
+  const Y=v=>padB+(1-(v-min)/((max-min)||1))*(h-padB-4);
+  const pts=s.map(p=>(p.dischargeM3s!=null)?`${X(s.indexOf(p)).toFixed(1)},${Y(p.dischargeM3s).toFixed(1)}`:null).filter(Boolean).join(' ');
+  const hist=s.filter(p=>s.indexOf(p)<ti&&p.dischargeM3s!=null).map(p=>`${X(s.indexOf(p)).toFixed(1)},${Y(p.dischargeM3s).toFixed(1)}`).join(' ');
+  const fc=s.filter(p=>s.indexOf(p)>=ti-1&&p.dischargeM3s!=null).map(p=>`${X(s.indexOf(p)).toFixed(1)},${Y(p.dischargeM3s).toFixed(1)}`).join(' ');
+  const by=Y(i.baselineM3s||0);
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:48px" preserveAspectRatio="none">
+    <line x1="0" y1="${by}" x2="${w}" y2="${by}" stroke="#111" stroke-width="1" stroke-dasharray="5,4"/>
+    <polyline points="${hist}" fill="none" stroke="#3f51b5" stroke-width="1.6"/>
+    <polyline points="${fc}" fill="none" stroke="#9e9e9e" stroke-width="1.6" stroke-dasharray="4,3"/>
+    <text x="${w-40}" y="${by-4}" font-size="8" fill="#666">${t('baseline')}</text>
+  </svg>`;
+}
+
+// Shared timeline chart: pick a window and a source (a rain station, a river, or Tibet) and
+// plot observed + predicted. Wired into the "Timeline" panel.
+let tlWin='7d', tlMode='rivers';
+function renderTimeline(state){
+  const cvs=document.getElementById('tlChart'); if(!cvs)return;
+  // window + source pickers
+  const winOpts=[['10m',t('tlWin10m')],['1h',t('tlWin1h')],['6h',t('tlWin6h')],['12h',t('tlWin12h')],['24h',t('tlWin24h')],['7d',t('tlWin7d')]];
+  document.getElementById('tlWindow').innerHTML=winOpts.map(([id,l])=>`<div class="tab ${tlWin===id?'active':''}" data-w="${id}">${l}</div>`).join('');
+  document.querySelectorAll('#tlWindow .tab').forEach(el=>el.onclick=()=>{tlWin=el.dataset.w;renderTimeline(state);});
+  const srcOpts=[['rivers',t('tlAllRivers')],['up',t('legendUpstream')],['rain',t('tlAllRain')]];
+  document.getElementById('tlSource').innerHTML=srcOpts.map(([id,l])=>`<div class="tab ${tlMode===id?'active':''}" data-s="${id}">${l}</div>`).join('');
+  document.querySelectorAll('#tlSource .tab').forEach(el=>el.onclick=()=>{tlMode=el.dataset.s;renderTimeline(state);});
+
+  drawTimelineChart(cvs, state);
+}
+
+function drawTimelineChart(cvs, state){
+  const dpr=window.devicePixelRatio||1; const W=cvs.clientWidth||620,H=260;
+  cvs.width=W*dpr; cvs.height=H*dpr;
+  const ctx=cvs.getContext('2d'); ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=getComputedStyle(document.body).getPropertyValue('--bg').trim()||'#fff';
+  ctx.fillRect(0,0,W,H);
+  const mut=getComputedStyle(document.body).getPropertyValue('--muted').trim();
+  ctx.font='10px sans-serif'; ctx.fillStyle=mut;
+
+  const padL=46,padR=14,padT=18,padB=26;
+
+  // Gather series for the selected mode/window
+  let datasets=[]; // {name, color, dash, points:[{x(label), v}], baseline, unit, warn, danger}
+  if(tlMode==='rivers'){
+    const rivs=(state.forecast?.rivers||[]).filter(r=>r.series&&r.series.length);
+    {
+      const lim=8;
+      const sel = tlWin==='24h'?rivs.filter(r=>r.band==='ALERT'||r.band==='WARNING'):
+                   tlWin==='12h'?rivs.filter(r=>r.band==='ALERT'):rivs;
+      for(const r of sel.slice(0,lim)){
+        const s=r.series.filter(p=>p.dischargeM3s!=null);
+        if(!s.length)continue;
+        datasets.push({name:r.name,color:r.band==='ALERT'?'#f44336':r.band==='WARNING'?'#ff9800':'#42a5f5',
+          points:s.slice(Math.max(0,s.length-7)).map(p=>({label:p.date.slice(5),v:p.dischargeM3s})),
+          baseline:r.baselineM3s, unit:'m³/s'});
+      }
+    }
+  } else if(tlMode==='up'){
+    for(const i of state.upstream?.items||[]){
+      const s=(i.series||[]).filter(p=>p.dischargeM3s!=null);
+      if(!s.length)continue;
+      datasets.push({name:i.name,color:'#3f51b5',dash:false,
+        points:s.slice(Math.max(0,s.length-7)).map(p=>({label:p.date.slice(5),v:p.dischargeM3s})),
+        baseline:i.baselineM3s, unit:'m³/s', todayIdx:i.todayIdx});
+    }
+  } else {
+    // rain stations — observed mm/hr over their 1/3/6/12/24h buckets as a bar set
+    const sts=(state.bipad?.rain?.stations||[]).filter(s=>s.hourlyMm!=null).slice(0,12);
+    const buckets=tlWin==='24h'?'24h':tlWin==='12h'?'12h':tlWin==='6h'?'6h':'1h';
+    const idx={'1h':0,'3h':1,'6h':2,'12h':3,'24h':4}[buckets]??0;
+    datasets=sts.map(s=>{
+      const av=s.averages||[];
+      const a=av[idx];
+      return {name:s.name,color:'#1e88e5',unit:'mm',
+        points:[{label:av[idx]?.interval+'h',v:a?.value??0}], bucket:av[idx]};
+    });
+  }
+  if(!datasets.length){ctx.fillText(t('noData'),W/2-30,H/2);document.getElementById('tlLegend').innerHTML='';document.getElementById('tlStatus').textContent='';return;}
+
+  // For rain mode, show bars; otherwise show line(s)
+  const showBars = tlMode==='rain';
+  if(showBars){
+    const bw=W*0.7/datasets.length; const bx=padL+10;
+    const maxV=Math.max(1,...datasets.map(d=>d.points.reduce((a,p)=>a+p.v,1)));
+    const cut=datasets.slice(0,Math.min(20,datasets.length));
+    cut.forEach((d,i)=>{
+      const barH=Math.max(2,(d.points[0].v/maxV)*(H-padT-padB));
+      const y=H-padB-barH;
+      ctx.fillStyle=d.color; ctx.fillRect(bx+i*bw,y,bw-4,barH);
+      ctx.fillStyle=mut;
+      ctx.save();ctx.translate(bx+i*bw+bw/2,y-4);ctx.rotate(-Math.PI/2);ctx.textAlign='left';
+      ctx.fillText((d.name||'').slice(0,14),0,0);ctx.restore();
+    });
+    const lv=datasets.find(d=>d.points[0])?.points[0].v??0;
+    document.getElementById('tlStatus').textContent=`${t('tlMostRain')} ▤ ${lv} mm`;
+    return;
+  }
+
+  // Lines: collect all x labels + values
+  const allVals=datasets.flatMap(d=>d.points.map(p=>p.v));
+  const max=Math.max(1,...allVals, ...datasets.map(d=>d.baseline||0))*1.1;
+  const xLabels=[...new Set(datasets.flatMap(d=>d.points.map(p=>p.label)))];
+  const X=i=>padL+(i/(xLabels.length-1||1))*(W-padL-padR);
+  const Y=v=>padT+(1-v/max)*(H-padT-padB);
+
+  // grid
+  ctx.strokeStyle='#e3e3e3';
+  for(let g=0;g<=4;g++){const v=max*g/4;const y=Y(v);ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();ctx.fillText(Math.round(v),4,y+3);}
+  // x labels
+  xLabels.forEach((lb,i)=>ctx.fillText(lb,X(i)-10,H-8));
+
+  datasets.forEach(d=>{
+    const base=(d.baseline!=null&&d.baseline>0)?Y(d.baseline):null;
+    if(base!=null){ctx.strokeStyle='#666';ctx.setLineDash([5,4]);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(padL,base);ctx.lineTo(W-padR,base);ctx.stroke();ctx.setLineDash([]);}
+    ctx.strokeStyle=d.color;ctx.lineWidth=2;ctx.setLineDash(d.dash?[5,4]:[]);
+    ctx.beginPath();
+    d.points.forEach((p,i)=>{
+      const xi=xLabels.indexOf(p.label); const y=Y(p.v);
+      if(i===0)ctx.moveTo(X(xi),y);else ctx.lineTo(X(xi),y);
+    });
+    ctx.stroke();ctx.setLineDash([]);
+  });
+
+  document.getElementById('tlLegend').innerHTML=datasets.map(d=>
+    `<span><i style="background:${d.color}"></i>${d.name}${d.baseline!=null?` (${t('tlNormal')} ${Math.round(d.baseline)})`:''}</span>`).join('');
+  document.getElementById('tlStatus').textContent=`${t('tlWindow')}: ${t(tlWin==='7d'?'tlWin7d':tlWin==='24h'?'tlWin24h':tlWin==='12h'?'tlWin12h':tlWin==='6h'?'tlWin6h':'tlWin1h')} · ${t('tlObserved')} = solid, ${t('tlPredicted')} = dashed`;
+}
+
+function renderRain(state){
+  const items=(state.rainNowcast?.items||[]).sort((a,b)=>(b.prob||0)-(a.prob||0));
+  const live=state.liveRain||{};
+  const liveItems=(live.items||[]).filter(x=>(x.precipMmHr||0)>0).sort((a,b)=>b.precipMmHr-a.precipMmHr);
+  const summary=live.summary||{};
+  const header = summary.gridPoints>0 ? `
+    <div class="row" style="margin-bottom:6px;border-top:2px solid #000;border-bottom:1px solid #ccc;padding:4px 0">
+      <strong>${t('liveRainTitle')}</strong>
+      <span class="muted" style="float:right">${t('rainNowHdr')}: ${summary.totalRaining||0}/${summary.gridPoints} ${t('monitored')} · max ${(summary.maxPrecipMmHr||0).toFixed(1)} ${t('mmPerHr')}</span>
+    </div>` : '';
+  const liveRows = liveItems.slice(0,6).map(r=>`
+    <div class="risk-row">
+      <div class="name">${r.name}<span class="sub">${r.precipMmHr.toFixed(1)} ${t('mmPerHr')}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,(r.precipMmHr||0)/15*100)}%;background:${r.precipMmHr>=15?'#1565c0':r.precipMmHr>=8?'#1e88e5':r.precipMmHr>=4?'#42a5f5':'#90caf9'}"></div></div>
+      <div class="score">${r.precipMmHr.toFixed(1)}</div>
+    </div>`).join('');
+  document.getElementById('rainList').innerHTML=header+liveRows+items.map(r=>`
+    <div class="risk-row">
+      <div class="name">${r.name}<span class="sub">${(r.precipMm6h||0).toFixed(1)}${t('mm6h')}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${r.prob||0}%;background:${r.prob>=80?'#f44336':r.prob>=60?'#ff9800':'#42a5f5'}"></div></div>
+      <div class="score">${r.prob!=null?r.prob+'%':'—'}</div>
+    </div>`).join('')||`<div class="small muted">${t('noData')}</div>`;
+}
+
+function renderGauges(state){
+  const st=state.flood?.stations||[];
+  const tLv={normal:t('normal'),rising:t('rising'),warning:t('warning'),danger:t('danger')};
+  const sortLevel={normal:0,rising:1,warning:2,danger:3};
+  const sorted=[...st].filter(g=>g.value!=null).sort((a,b)=>(sortLevel[b.level]||0)-(sortLevel[a.level]||0)||(b.value-a.value)).slice(0,30);
+  document.getElementById('gaugeList').innerHTML=sorted.map(g=>{
+    const isWater=g.unit==='m';
+    if(!isWater) return `<div class="row"><div><span class="badge ${bandClass(g.level==='normal'?'WATCH':g.level==='rising'?'WATCH':g.level)}">${tLv[g.level]||g.level}</span> <strong style="margin-left:8px">${g.name}</strong></div><div class="muted">${g.value!=null?Math.round(g.value)+' m³/s':'—'}</div></div>`;
+    // margin-to-warning bar: fill = how close to warning (100% = at warning, 0% = at base)
+    const wL=g.warningLevel, dL=g.dangerLevel, v=g.value;
+    let fillPct=0, barCol='#4caf50';
+    if(wL!=null && v!=null){
+      fillPct=Math.min(100, Math.max(0, (v/wL)*100));
+      if(v>=dL){ fillPct=100; barCol='#d32f2f'; }
+      else if(v>=wL){ barCol='#ff9800'; }
+      else if(fillPct>=85){ barCol='#ffc107'; }
+      else if(fillPct>=70){ barCol='#ffeb3b'; }
+      else { barCol='#8bc34a'; }
+    }
+    const steadyIcon = g.steady==='RISING'?' ↗':g.steady==='FALLING'?' ↘':' →';
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div><span class="badge ${bandClass(g.level==='normal'?'WATCH':g.level==='rising'?'WATCH':g.level)}">${tLv[g.level]||g.level}</span> <strong style="margin-left:8px">${g.name}</strong> <span class="muted small">${g.basin||''}</span></div>
+        <div class="muted">${g.value!=null?g.value.toFixed(2)+' m':''}${g.steady?'<span style="font-size:14px;margin-left:4px">'+steadyIcon+'</span>':''} <span class="small">${g.measuredOn?new Date(g.measuredOn).toLocaleTimeString():''}</span></div>
+      </div>
+      ${wL!=null?`<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)">
+        <div style="flex:1;height:8px;background:#e0e0e0;border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${Math.min(100,fillPct)}%;background:${barCol};border-radius:4px;transition:width .3s"></div>
+        </div>
+        <span>${dL!=null?'W:'+wL+' D:'+dL:''}</span>
+      </div>`:''}
+    </div>`;
+  }).join('')||`<div class="small muted">${t('noData')}</div>`;
+}
+
+function renderQuakes(state){
+  const qs=(state.earthquake?.quakes||[]).slice(0,10);
+  document.getElementById('quakeList').innerHTML=qs.map(q=>`
+    <div class="row">
+      <div><strong>M${q.mag}</strong> — ${q.place}</div>
+      <div class="muted small">${new Date(q.time).toLocaleString()}</div>
+    </div>`).join('')||`<div class="small muted">${t('noData')}</div>`;
+}
+
+function renderBipad(state){
+  const b=state.bipad||{};
+  if(b.status!=='connected'){
+    document.getElementById('bipadTabs').innerHTML='';
+    document.getElementById('bipadList').innerHTML=`<div class="small muted">${t('noData')}</div>`;
+    return;
+  }
+  if(!window.__bipadTab) window.__bipadTab='river';
+  const tabs=[['river',t('bipadRiverTab')],['rain',t('bipadRainTab')],['alert',t('bipadAlertTab')],['incident',t('bipadIncidentTab')],['road',t('bipadRoadTab')],['loss',t('bipadLossTab')]];
+  document.getElementById('bipadTabs').innerHTML=tabs.map(([id,label])=>
+    `<div class="tab ${window.__bipadTab===id?'active':''}" data-btab="${id}">${label}</div>`).join('');
+  document.querySelectorAll('#bipadTabs .tab').forEach(el=>el.onclick=()=>{window.__bipadTab=el.dataset.btab;renderBipad(state);});
+
+  const tvl={normal:t('normal'),rising:t('rising'),warning:t('warning'),danger:t('danger')};
+  if(window.__bipadTab==='river'){
+    const lvl={normal:0,rising:1,warning:2,danger:3};
+    const st=(b.river?.stations||[]).sort((a,b2)=>(lvl[b2.level]||0)-(lvl[a.level]||0)).slice(0,25);
+    document.getElementById('bipadList').innerHTML=st.map(g=>`
+      <div class="row">
+        <div><span class="badge ${bandClass(g.level==='normal'?'WATCH':g.level==='rising'?'WATCH':g.level)}">${tvl[g.level]||g.level}</span> <strong style="margin-left:8px">${g.name}</strong> <span class="muted small">${g.basin||''}</span></div>
+        <div class="muted">${g.waterLevel!=null?(g.waterLevel).toFixed(2)+' m':t('noData')}${g.steady?` <span class="small">· ${g.steady}</span>`:''}</div>
+      </div>`).join('')||`<div class="small muted">${t('noData')}</div>`;
+    document.getElementById('bipadList').innerHTML=
+      `<div class="row" style="border-top:2px solid #000"><strong>${t('liveStations')}: ${b.river?.liveStations||0}</strong><span class="muted">${t('danger')}: ${b.river?.counts?.danger||0} · ${t('warning')}: ${b.river?.counts?.warning||0}</span></div>`
+      +document.getElementById('bipadList').innerHTML;
+  } else if(window.__bipadTab==='rain'){
+    const st=(b.rain?.stations||[]).sort((a,b2)=>(b2.hourlyMm||0)-(a.hourlyMm||0)).slice(0,25);
+    document.getElementById('bipadList').innerHTML=
+      `<div class="row" style="border-top:2px solid #000"><strong>${t('liveStations')}: ${b.rain?.liveStations||0}</strong><span class="muted">${t('rainingNow')}: ${b.rain?.liveWithRain||0} · max ${(b.rain?.maxHourlyMm||0).toFixed(1)} ${t('mmH')}</span></div>`
+      +st.map(g=>`
+      <div class="risk-row">
+        <div class="name">${g.name}<span class="sub">${g.basin||''}</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,(g.hourlyMm||0)/15*100)}%;background:${(g.hourlyMm||0)>=30?'#b71c1c':(g.hourlyMm||0)>=15?'#d32f2f':(g.hourlyMm||0)>=8?'#ff9800':(g.hourlyMm||0)>=4?'#ffc107':(g.hourlyMm||0)>=1.5?'#8bc34a':(g.hourlyMm||0)>=0.05?'#4caf50':'#e0e0e0'}"></div></div>
+        <div class="score">${(g.hourlyMm||0).toFixed(1)}</div>
+      </div>`).join('')||`<div class="small muted">${t('noData')}</div>`;
+  } else if(window.__bipadTab==='alert'){
+    const as=(b.alerts?.alerts||[]).filter(a=>a.isWater);
+    document.getElementById('bipadList').innerHTML=as.length?as.map(a=>`
+      <div class="row"><div><span class="badge danger">${t('warning')}</span> <strong style="margin-left:8px">${a.title}</strong>${a.titleNe?` <span class="muted small">${a.titleNe}</span>`:''}</div>
+      <div class="muted small">${new Date(a.startedOn).toLocaleString()}</div></div>`).join('')
+      :`<div class="small muted">${t('noAlerts')}</div>`;
+  } else if(window.__bipadTab==='incident'){
+    // Landslides come from road-blocking events; also list fire/flood incidents
+    const lses=((b.highways?.landslides||[]).filter(i=>i.isClosed||i.isPartial||!i.dateRoadblockEnd)).slice(0,25);
+    const incs=((b.incidents?.incidents||[]).filter(i=>i.isLandslide||i.isFire||i.isFlood)).slice(0,15);
+    const lsTxt=i=>`<div class="row" style="align-items:flex-start">
+      <div><span class="badge ${i.isClosed?'danger':'warning'}">🏔️ ${i.isClosed?t('roadsClosed'):t('roadsPartial')}</span> <strong style="margin-left:8px">${i.title}</strong>
+        <div class="meta">${t('reason')}: ${i.closureReason||'Landslide'}${i.dateRoadblockStart?` · ${i.dateRoadblockStart.slice(0,10)}`:''}</div></div>
+      <div class="muted small">${i.district?`D ${i.district}`:''}</div>
+    </div>`;
+    const incTxt=i=>`<div class="row" style="align-items:flex-start">
+      <div><span class="badge ${i.isLandslide?'danger':i.isFire?'danger':'warning'}">${i.hazard}</span> <strong style="margin-left:8px">${i.title}</strong>${i.district?` <span class="muted small">D ${i.district}</span>`:''}</div>
+      <div class="muted small">${i.incidentOn?i.incidentOn.slice(0,10):''}${i.verified?' ✓':''}</div>
+    </div>`;
+    document.getElementById('bipadList').innerHTML=
+      `<div class="row" style="border-top:2px solid #000"><strong>🏔️ ${t('landslides')}: ${b.highways?.landslideCount||0}</strong><span class="muted">${t('roadsClosed')}: ${b.highways?.closedCount||0} · ${t('roadsPartial')}: ${b.highways?.partialCount||0}</span></div>`
+      +(lses.map(lsTxt).join(''))
+      +(incs.length?`<div class="row" style="border-top:2px solid #000;margin-top:6px"><strong>${t('incidents')}: ${b.incidents?.total||0}</strong><span class="muted">🔥${t('fires')}: ${b.incidents?.fires||0}</span></div>`+incs.map(incTxt).join(''):'')
+      ||`<div class="small muted">${t('noData')}</div>`;
+  } else if(window.__bipadTab==='road'){
+    const roads=((b.highways?.roads||[])).slice(0,25);
+    document.getElementById('bipadList').innerHTML=
+      `<div class="row" style="border-top:2px solid #000"><strong>${t('roads')}: ${b.highways?.activeCount||0}</strong><span class="muted">${t('roadsClosed')}: ${b.highways?.closedCount||0} · ${t('roadsPartial')}: ${b.highways?.partialCount||0}</span></div>`
+      +(roads.map(r=>`
+      <div class="row" style="align-items:flex-start">
+        <div><span class="badge ${r.isClosed?'danger':'warning'}">${r.isClosed?'🔴':'🟠'} ${r.isClosed?t('roadsClosed'):t('roadsPartial')}</span> <strong style="margin-left:8px">${r.title}</strong>
+          <div class="meta">${r.closureReason?`${t('reason')}: ${r.closureReason}`:''}${r.dateRoadblockStart?` · since ${r.dateRoadblockStart.slice(0,10)}`:''}</div>
+        </div>
+        <div class="muted small">${r.district?`D ${r.district}`:''}</div>
+      </div>`).join('')||`<div class="small muted">${t('noData')}</div>`);
+  } else {
+    const tot=b.loss?.totals||{};
+    const nrss=[[t('deaths'),tot.deaths,'#f44336'],[t('missing'),tot.missing,'#ff9800'],[t('injured'),tot.injured,'#ffc107'],[t('affected'),tot.affected,'#4caf50'],[t('roadDest'),tot.roadDestroyed,'#795548'],[t('bridgesDest'),tot.bridgeDestroyed,'#9c27b0']];
+    document.getElementById('bipadList').innerHTML=
+      `<div class="row" style="border-top:2px solid #000"><strong>${t('impact')} (BIPAD)</strong><span class="muted">${t('economicLoss')}: ${tot.economicLoss?Math.round(tot.economicLoss/1e7)/100+' Cr':t('noData')}</span></div>`
+      +nrss.map(([k,v,c])=>`
+      <div class="risk-row">
+        <div class="name">${k}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,(v||0)/Math.max(1,...nrss.map(n=>n[1]))*100)}%;background:${c}"></div></div>
+        <div class="score">${v||0}</div>
+      </div>`).join('');
+  }
+}
+
+function renderSatellite(state){
+  const sat=state.satellite||{};
+  if(nasaLayer){map.removeLayer(nasaLayer);nasaLayer=null;} window.__nasaCfg=null;
+  if(sat.overlay&&sat.overlay.kind==='gibs-tiles'&&sat.overlay.latestTime&&sat.overlay.layer){
+    window.__nasaCfg={template:`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${sat.overlay.layer}/default/${sat.overlay.latestTime}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`,latestTime:sat.overlay.latestTime};
+    addNasa();
+    startNasaAutoRefresh();
+  }
+}
+function addNasa(){
+  const c=window.__nasaCfg; if(!c)return;
+  if(nasaLayer)map.removeLayer(nasaLayer);
+  nasaLayer=L.tileLayer(c.template,{opacity:0.55,zIndex:500,attribution:'NASA LANCE',updateWhenZooming:false}).addTo(map);
+}
+
+/* =============================== alerts =============================== */
+function appendAlert(a){
+  const list=document.getElementById('alertList');
+  const empty=document.getElementById('alertEmpty'); if(empty)empty.remove();
+  const row=document.createElement('div');
+  row.className='row'; row.style.alignItems='flex-start';
+  row.innerHTML=`<div><span class="badge ${a.severity==='danger'?'danger':a.severity==='warning'?'warning':'watch'}">${(a.severity||'info').toUpperCase()}</span> <span style="font-size:13px">${a.message}</span></div><div class="muted small">${new Date(a.at).toLocaleTimeString()}</div>`;
+  list.prepend(row);
+  // toast
+  if(!seenAlerts.has(a.id)){ seenAlerts.add(a.id); toast(a.message, a.agent?'agent':a.severity, a.at); }
+}
+
+function renderAll(state){
+  if(!state) return;
+  lastState=state;
+  window.__state=state;
+  document.getElementById('wsStatus').textContent=t('live');
+  document.getElementById('dot').classList.add('live');
+  renderStatRow(state);
+  renderRiverForecast(state);
+  renderRisk(state);
+  renderUpstream(state);
+  renderTimeline(state);
+  renderRain(state);
+  renderGauges(state);
+  renderQuakes(state);
+  renderSatellite(state);
+  renderBipad(state);
+  renderMap(state);
+}
+
+initMap();
+applyLang();
+
+// ---- Live connection (WebSocket + HTTP fallback) ----
+// WebSocket streams live updates every 2 min. If the socket drops we
+// auto-reconnect AND fall back to a 2-min HTTP poll of /api/bipad + /api/alerts
+// so new BIPAD items (incidents, road closures, alerts, rain, gauges) still
+// reach the panels and the map even while reconnecting.
+const proto=location.protocol==='https:'?'wss':'ws';
+let ws=null, wsRetry=0, lastWsUpdate=0;
+const WS_MAX_RETRY=30000;
+const HTTP_POLL_MS=120000;
+
+function setLive(on){
+  document.getElementById('wsStatus').textContent=on?t('live'):'—';
+  document.getElementById('dot').classList.toggle('live',!!on);
+}
+function onWsMessage(ev){
+  let msg; try{ msg=JSON.parse(ev.data); }catch(e){ return; }
+  if(msg.type==='init'||msg.type==='update'){ lastWsUpdate=Date.now(); setLive(true); renderAll(msg); }
+  if(msg.type==='alert'){ (msg.alerts||[]).forEach(appendAlert); }
+}
+function connectWS(){
+  ws=new WebSocket(`${proto}://${location.host}`);
+  ws.onopen=()=>{ wsRetry=0; setLive(true); console.log('[ws] connected'); };
+  ws.onmessage=onWsMessage;
+  ws.onclose=()=>{ setLive(false); scheduleReconnect(); };
+  ws.onerror=()=>{ try{ws.close();}catch(e){} };
+}
+function scheduleReconnect(){
+  const delay=Math.min(WS_MAX_RETRY, 1000*Math.pow(2,wsRetry));
+  wsRetry++; setTimeout(connectWS, delay);
+}
+// HTTP fallback: keep the site fresh even with the WS down.
+async function pollFallback(){
+  if(Date.now()-lastWsUpdate < HTTP_POLL_MS) return; // WS is healthy, skip
+  setLive(false);
+  try{
+    const [bs, al] = await Promise.all([
+      fetch('/api/bipad').then(r=>r.json()).catch(()=>null),
+      fetch('/api/alerts').then(r=>r.json()).catch(()=>null)
+    ]);
+    if(bs&&bs.status==='connected'){
+      const st=lastState||{}; st.bipad=bs; if(st.risk) st.risk=lastState.risk;
+      renderAll(st);
+    }
+    if(al&&al.alerts){ al.alerts.forEach(appendAlert); }
+  }catch(e){ /* keep trying next poll */ }
+}
+setInterval(pollFallback, HTTP_POLL_MS/2);
+connectWS();
+</script>
+</body>
+</html>
